@@ -1,4 +1,45 @@
-local definitions = {
+local M = {}
+_G.zf_sim_defs = M
+
+M.resources = {
+    food = {
+        id = "food",
+        display_name = "Food",
+        category = "consumable",
+    },
+    water = {
+        id = "water",
+        display_name = "Water",
+        category = "consumable",
+    },
+    ammo_basic = {
+        id = "ammo_basic",
+        display_name = "Basic ammo",
+        category = "consumable",
+    },
+    scrap_metal = {
+        id = "scrap_metal",
+        display_name = "Scrap metal",
+        category = "raw",
+    },
+}
+
+M.factions = {
+    loners = {
+        id = "loners",
+        display_name = "Loners",
+        base_aggression = 0.25,
+        expansion_preference = 0.35,
+    },
+    bandits = {
+        id = "bandits",
+        display_name = "Bandits",
+        base_aggression = 0.70,
+        expansion_preference = 0.60,
+    },
+}
+
+M.territories = {
     rookie_village = {
         id = "rookie_village",
         display_name = "Rookie Village",
@@ -63,59 +104,18 @@ local definitions = {
     },
 }
 
-local function copy_map(value)
-    local result = {}
+M.routes = {
+    rookie_to_checkpoint = {
+        id = "rookie_to_checkpoint",
+        origin = "rookie_village",
+        destination = "cordon_checkpoint",
+        nodes = {"rookie_village", "cordon_checkpoint"},
+        travel_ticks = 3,
+        cargo = {
+            food = 12,
+            ammo_basic = 18,
+        },
+    },
+}
 
-    for key, item in pairs(value or {}) do
-        result[key] = item
-    end
-
-    return result
-end
-
-local function copy_territory(definition)
-    return {
-        id = definition.id,
-        display_name = definition.display_name,
-        type = definition.type,
-        owner = definition.owner,
-        supply = definition.supply,
-        security = definition.security,
-        storage = copy_map(definition.storage),
-        consumption = copy_map(definition.consumption),
-        production = copy_map(definition.production),
-    }
-end
-
-local function add_faction_territory(state, faction_id, territory_id)
-    local faction = state.factions[faction_id]
-
-    if faction == nil then
-        return
-    end
-
-    for _, existing in ipairs(faction.territories) do
-        if existing == territory_id then
-            return
-        end
-    end
-
-    table.insert(faction.territories, territory_id)
-end
-
-function get_definitions()
-    return definitions
-end
-
-function init_state(state)
-    state.territory_definitions = definitions
-
-    for id, definition in pairs(definitions) do
-        if state.territories[id] == nil then
-            state.territories[id] = copy_territory(definition)
-        end
-
-        add_faction_territory(state, definition.owner, id)
-    end
-end
-
+return M

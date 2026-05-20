@@ -1,43 +1,7 @@
-local route_definitions = {
-    rookie_to_checkpoint = {
-        id = "rookie_to_checkpoint",
-        origin = "rookie_village",
-        destination = "cordon_checkpoint",
-        nodes = {"rookie_village", "cordon_checkpoint"},
-        travel_ticks = 3,
-        cargo = {
-            food = 12,
-            ammo_basic = 18,
-        },
-    },
-}
+local util = zf_sim_util or require("zf_sim_util")
 
-local caravan_sequence = 0
-
-local function copy_map(value)
-    local result = {}
-
-    for key, item in pairs(value or {}) do
-        result[key] = item
-    end
-
-    return result
-end
-
-local function add_resource(storage, resource_id, amount)
-    storage[resource_id] = (storage[resource_id] or 0) + amount
-end
-
-local function remove_resource(storage, resource_id, amount)
-    local current = storage[resource_id] or 0
-    local removed = math.min(current, amount)
-    storage[resource_id] = current - removed
-    return removed
-end
-
-local function route()
-    return route_definitions.rookie_to_checkpoint
-end
+local M = {}
+_G.zf_sim_caravans = M
 
 local function has_active_route_caravan(state, route_id)
     for _, caravan in pairs(state.caravans) do
@@ -60,7 +24,7 @@ local function create_caravan(state, route_definition)
     local total_cargo = 0
 
     for resource_id, amount in pairs(route_definition.cargo) do
-        local removed = remove_resource(origin.storage, resource_id, amount)
+        local removed = util.remove_resource(origin.storage, resource_id, amount)
         if removed > 0 then
             cargo[resource_id] = removed
             total_cargo = total_cargo + removed
@@ -71,8 +35,8 @@ local function create_caravan(state, route_definition)
         return nil
     end
 
-    caravan_sequence = caravan_sequence + 1
-    local id = "caravan_" .. tostring(caravan_sequence)
+    local id = "caravan_" .. tostring(state.next_caravan_id or 1)
+    state.next_caravan_id = (state.next_caravan_id or 1) + 1
 
     state.caravans[id] = {
         id = id,
@@ -94,7 +58,7 @@ local function arrive_caravan(state, caravan)
 
     if destination ~= nil then
         for resource_id, amount in pairs(caravan.cargo) do
-            add_resource(destination.storage, resource_id, amount)
+            util.add_resource(destination.storage, resource_id, amount)
         end
     end
 
@@ -108,26 +72,22 @@ local function arrive_caravan(state, caravan)
     })
 end
 
-function init_state(state)
-    state.supply_routes = route_definitions
-end
-
-function update(state)
-    local active_count = 0
-
+function M.update(state)
     for _, caravan in pairs(state.caravans) do
         if caravan.state == "moving" then
-            active_count = active_count + 1
             caravan.progress = caravan.progress + 1
 
             if caravan.progress >= caravan.travel_ticks then
                 arrive_caravan(state, caravan)
-                active_count = active_count - 1
             end
         end
     end
 
-    local route_definition = route()
+    local route_definition = state.supply_routes.rookie_to_checkpoint
+    if route_definition == nil then
+        return
+    end
+
     if state.strategic_tick > 0
         and state.strategic_tick % 3 == 0
         and not has_active_route_caravan(state, route_definition.id)
@@ -146,7 +106,4 @@ function update(state)
     end
 end
 
-function get_route_definitions()
-    return route_definitions
-end
-
+return M

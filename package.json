@@ -1,0 +1,27 @@
+{
+  "name": "zone-frontier",
+  "version": "1.0.0",
+  "description": "Zone Frontier is a planned strategic gameplay layer for S.T.A.L.K.E.R. GAMMA 0.9.5.",
+  "private": true,
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "node tools/run_lua_tests.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lev-goryachev/zone-frontier.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/lev-goryachev/zone-frontier/issues"
+  },
+  "homepage": "https://github.com/lev-goryachev/zone-frontier#readme",
+  "devDependencies": {
+    "fengari": "^0.1.5"
+  }
+}

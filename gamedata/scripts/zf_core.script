@@ -14,24 +14,6 @@ function init()
 
     local state = zf_state and zf_state.init()
 
-    if state ~= nil then
-        if zf_resources then
-            zf_resources.init_state(state)
-        end
-
-        if zf_factions then
-            zf_factions.init_state(state)
-        end
-
-        if zf_territories then
-            zf_territories.init_state(state)
-        end
-
-        if zf_caravans then
-            zf_caravans.init_state(state)
-        end
-    end
-
     next_tick_at = time_global() + STRATEGIC_TICK_MS
     initialized = true
 
@@ -44,62 +26,6 @@ function init()
         )
     else
         log("core initialized")
-    end
-end
-
-local function clamp(value, minimum, maximum)
-    if value < minimum then
-        return minimum
-    end
-
-    if value > maximum then
-        return maximum
-    end
-
-    return value
-end
-
-local function add_resource(storage, resource_id, amount)
-    storage[resource_id] = (storage[resource_id] or 0) + amount
-end
-
-local function consume_resource(storage, resource_id, amount)
-    local current = storage[resource_id] or 0
-    local consumed = math.min(current, amount)
-    storage[resource_id] = current - consumed
-    return consumed
-end
-
-local function update_territory(territory)
-    local shortage = 0
-
-    for resource_id, amount in pairs(territory.production or {}) do
-        add_resource(territory.storage, resource_id, amount)
-    end
-
-    for resource_id, amount in pairs(territory.consumption or {}) do
-        local consumed = consume_resource(territory.storage, resource_id, amount)
-        if consumed < amount then
-            shortage = shortage + (amount - consumed)
-        end
-    end
-
-    if shortage > 0 then
-        territory.supply = clamp(territory.supply - 0.08 * shortage, 0, 1)
-    else
-        territory.supply = clamp(territory.supply + 0.02, 0, 1)
-    end
-
-    if territory.supply < 0.35 then
-        territory.security = clamp(territory.security - 0.03, 0, 1)
-    elseif territory.supply > 0.75 then
-        territory.security = clamp(territory.security + 0.01, 0, 1)
-    end
-end
-
-local function update_economy(state)
-    for _, territory in pairs(state.territories or {}) do
-        update_territory(territory)
     end
 end
 
@@ -147,13 +73,12 @@ function update()
     next_tick_at = now + STRATEGIC_TICK_MS
 
     if zf_state then
-        zf_state.increment_tick()
         local state = zf_state.get()
-
-        update_economy(state)
-
-        if zf_caravans then
-            zf_caravans.update(state)
+        local sim_core = zf_sim_core or (require and require("zf_sim_core"))
+        if sim_core and sim_core.strategic_tick then
+            sim_core.strategic_tick(state)
+        else
+            state.strategic_tick = state.strategic_tick + 1
         end
 
         log_tick_summary(state)

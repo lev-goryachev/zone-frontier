@@ -13,8 +13,8 @@ debug/output/
 # Build/deploy artifacts
 dist/
 build/
+node_modules/
 
 # Local environment files
 .env
 .env.*
-

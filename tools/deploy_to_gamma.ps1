@@ -6,6 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $sourceGamedata = Join-Path $projectRoot "gamedata"
+$sourceSrc = Join-Path $projectRoot "src"
 $gammaRoot = "D:\GAMMA"
 $gammaMods = Join-Path $gammaRoot "mods"
 $modName = "999- Zone Frontier"
@@ -123,6 +124,20 @@ foreach ($file in $runtimeFiles) {
     Invoke-Step "Copy gamedata\$relativePath" {
         New-Item -ItemType Directory -Force -Path $destinationDir | Out-Null
         Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+    }
+}
+
+if (Test-Path -LiteralPath $sourceSrc) {
+    $simFiles = Get-ChildItem -LiteralPath $sourceSrc -Filter "zf_sim_*.lua" -File
+
+    foreach ($file in $simFiles) {
+        $scriptName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name) + ".script"
+        $destination = Join-Path (Join-Path $targetGamedata "scripts") $scriptName
+
+        Invoke-Step "Copy src\$($file.Name) as gamedata\scripts\$scriptName" {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+            Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+        }
     }
 }
 
