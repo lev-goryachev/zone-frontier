@@ -1,0 +1,30 @@
+local MOD_NAME = "Zone Frontier"
+local LOG_PREFIX = "[" .. MOD_NAME .. "]"
+
+local first_update_done = false
+
+local function log(message)
+    printf("%s %s", LOG_PREFIX, message)
+end
+
+local function actor_on_first_update()
+    if first_update_done then
+        return
+    end
+
+    first_update_done = true
+    log("actor_on_first_update reached")
+
+    if UnregisterScriptCallback then
+        UnregisterScriptCallback("actor_on_first_update", actor_on_first_update)
+    end
+end
+
+function on_game_start()
+    log("zf_main loaded")
+
+    if RegisterScriptCallback then
+        RegisterScriptCallback("actor_on_first_update", actor_on_first_update)
+    end
+end
+
