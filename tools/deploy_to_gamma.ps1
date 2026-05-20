@@ -11,7 +11,8 @@ $gammaMods = Join-Path $gammaRoot "mods"
 $modName = "999- Zone Frontier"
 $modRoot = Join-Path $gammaMods $modName
 $targetGamedata = Join-Path $modRoot "gamedata"
-$profileRoot = Join-Path $gammaRoot "profiles\GAMMA Custom"
+$profileName = "G.A.M.M.A"
+$profileRoot = Join-Path $gammaRoot "profiles\$profileName"
 $modlistPath = Join-Path $profileRoot "modlist.txt"
 $metaPath = Join-Path $modRoot "meta.ini"
 
@@ -84,7 +85,7 @@ function Get-RelativePath {
 Assert-Path $sourceGamedata "project gamedata directory"
 Assert-Path (Join-Path $projectRoot "AGENTS.md") "project rules file"
 Assert-Path $gammaMods "GAMMA mods directory"
-Assert-Path $modlistPath "GAMMA Custom modlist"
+Assert-Path $modlistPath "$profileName modlist"
 
 Assert-ChildPath -Child $modRoot -Parent $gammaMods -Description "Zone Frontier mod target"
 Assert-ChildPath -Child $targetGamedata -Parent $modRoot -Description "Zone Frontier gamedata target"
@@ -155,6 +156,7 @@ Invoke-Step "Write MO2 meta.ini" {
 }
 
 $modEntry = "+$modName"
+$disabledModEntry = "-$modName"
 $modlistLines = Get-Content -LiteralPath $modlistPath
 
 if ($modlistLines -contains $modEntry) {
@@ -164,14 +166,24 @@ else {
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $backupPath = "$modlistPath.zf-backup-$timestamp"
 
-    Invoke-Step "Backup GAMMA Custom modlist to $backupPath" {
+    Invoke-Step "Backup $profileName modlist to $backupPath" {
         Copy-Item -LiteralPath $modlistPath -Destination $backupPath -Force
     }
 
-    Invoke-Step "Add $modEntry near the top of GAMMA Custom modlist" {
+    Invoke-Step "Enable $modEntry in $profileName modlist" {
         $lines = Get-Content -LiteralPath $modlistPath
 
-        if ($lines.Count -eq 0) {
+        if ($lines -contains $disabledModEntry) {
+            $updated = $lines | ForEach-Object {
+                if ($_ -eq $disabledModEntry) {
+                    $modEntry
+                }
+                else {
+                    $_
+                }
+            }
+        }
+        elseif ($lines.Count -eq 0) {
             $updated = @($modEntry)
         }
         elseif ($lines[0] -like "#*") {
