@@ -1,0 +1,413 @@
+local SCAN_INTERVAL_MS = 5000
+
+local initialized = false
+local last_scan_at = 0
+local last_error = nil
+local last_registered_name = "none"
+
+local function log(message)
+    printf("[Zone Frontier] npc_registry %s", tostring(message))
+end
+
+local function guarded(label, fn, fallback)
+    local ok, value = pcall(fn)
+    if ok then
+        return value
+    end
+
+    last_error = tostring(label) .. ": " .. tostring(value)
+    log("ERROR " .. last_error)
+    return fallback
+end
+
+local function sim_npc()
+    return zf_sim_npc or (require and require("zf_sim_npc"))
+end
+
+local function state()
+    return guarded("state", function()
+        local world = zf_state and zf_state.get and zf_state.get() or {}
+        return sim_npc().ensure_manifest_state(world)
+    end, sim_npc().new_manifest_state())
+end
+
+local function object_id(obj)
+    return guarded("object_id", function()
+        if obj == nil then
+            return nil
+        end
+        if type(obj.id) == "function" then
+            return obj:id()
+        end
+        return obj.id
+    end, nil)
+end
+
+local function object_clsid(obj)
+    local ok, value = pcall(function()
+        if obj == nil or obj.clsid == nil then
+            return nil
+        end
+
+        return obj:clsid()
+    end)
+
+    if ok then
+        return value
+    end
+
+    return nil
+end
+
+local function object_name(obj)
+    return guarded("object_name", function()
+        if obj and obj.name then
+            return obj:name()
+        end
+        return "unknown"
+    end, "unknown")
+end
+
+local function object_section(obj)
+    return guarded("object_section", function()
+        if obj and obj.section_name then
+            return obj:section_name()
+        end
+        if obj and obj.section then
+            return obj:section()
+        end
+        return "unknown"
+    end, "unknown")
+end
+
+local function object_community(obj)
+    return guarded("object_community", function()
+        if obj and obj.community then
+            return obj:community()
+        end
+        if obj and character_community then
+            return character_community(obj)
+        end
+        return "unknown"
+    end, "unknown")
+end
+
+local function object_rank(obj)
+    return guarded("object_rank", function()
+        if ranks and ranks.get_obj_rank_name then
+            return ranks.get_obj_rank_name(obj)
+        end
+        if obj and obj.rank then
+            return obj:rank()
+        end
+        return "novice"
+    end, "novice")
+end
+
+local function object_position(obj)
+    return guarded("object_position", function()
+        return obj and obj.position or nil
+    end, nil)
+end
+
+local function object_online(obj)
+    return guarded("object_online", function()
+        if obj and obj.online ~= nil then
+            return obj.online == true
+        end
+        local id = object_id(obj)
+        return id ~= nil and level and level.object_by_id and level.object_by_id(id) ~= nil
+    end, false)
+end
+
+local function object_squad_id(obj)
+    return guarded("object_squad_id", function()
+        if obj and obj.group_id and obj.group_id ~= 65535 then
+            return obj.group_id
+        end
+        local squad = get_object_squad and get_object_squad(obj) or nil
+        return squad and squad.id or nil
+    end, nil)
+end
+
+local function object_smart_id(obj)
+    return guarded("object_smart_id", function()
+        local squad_id = object_squad_id(obj)
+        local squad = squad_id and alife_object and alife_object(squad_id) or nil
+        return squad and (squad.smart_id or squad.current_target_id or squad.assigned_target_id) or nil
+    end, nil)
+end
+
+local function is_stalker_server_object(obj)
+    return guarded("is_stalker_server_object", function()
+        if obj == nil or obj.alive and obj:alive() == false then
+            return false
+        end
+
+        local cls = object_clsid(obj)
+        if cls == nil then
+            return false
+        end
+
+        if not (IsStalker and IsStalker(nil, cls)) then
+            return false
+        end
+
+        local community = object_community(obj)
+        return community ~= "trader" and community ~= "zombied"
+    end, false)
+end
+
+local function is_protected(obj)
+    return guarded("is_protected", function()
+        local id = object_id(obj)
+        if id == nil then
+            return true
+        end
+
+        if get_object_story_id and get_object_story_id(id) ~= nil then
+            return true
+        end
+
+        local squad_id = object_squad_id(obj)
+        local squad = squad_id and alife_object and alife_object(squad_id) or nil
+        if squad and ap_core_broker and ap_core_broker.is_protected then
+            local protected = ap_core_broker.is_protected(squad)
+            if protected then
+                return true
+            end
+        end
+
+        if squad and xsquad and xsquad.is_protected then
+            local protected = xsquad.is_protected(squad, {
+                exclude_scripted = true,
+                exclude_permanent = true,
+                exclude_active_role = true,
+                exclude_task_target = true,
+            })
+            if protected then
+                return true
+            end
+        end
+
+        return false
+    end, true)
+end
+
+local function tick()
+    return guarded("tick", function()
+        local world = zf_state and zf_state.get and zf_state.get() or nil
+        return world and world.strategic_tick or 0
+    end, 0)
+end
+
+local function data_for_server_npc(obj, online)
+    return {
+        engine_id = object_id(obj),
+        name = object_name(obj),
+        section = object_section(obj),
+        community = object_community(obj),
+        rank = object_rank(obj),
+        squad_id = object_squad_id(obj),
+        smart_id = object_smart_id(obj),
+        online = online == true or object_online(obj),
+        alive_state = "alive",
+        position = object_position(obj),
+        tick = tick(),
+    }
+end
+
+local function register_server_npc(obj, online)
+    return guarded("register_server_npc", function()
+        if not is_stalker_server_object(obj) then
+            return nil
+        end
+
+        local manifest = state()
+        if is_protected(obj) then
+            manifest.stats.protected_skipped = (manifest.stats.protected_skipped or 0) + 1
+            return nil
+        end
+
+        local entry = sim_npc().register_npc(manifest, data_for_server_npc(obj, online))
+        last_registered_name = entry.name or "unknown"
+        return entry
+    end, nil)
+end
+
+local function scan_squad(squad)
+    guarded("scan_squad", function()
+        if squad == nil or squad.squad_members == nil then
+            return
+        end
+
+        for member in squad:squad_members() do
+            register_server_npc(member, member and member.online == true)
+        end
+    end)
+end
+
+local function scan_squads()
+    guarded("scan_squads", function()
+        if SIMBOARD and SIMBOARD.squads then
+            for squad_id in pairs(SIMBOARD.squads) do
+                local squad = alife_object and alife_object(squad_id) or nil
+                scan_squad(squad)
+            end
+        end
+    end)
+end
+
+local function scan_server_objects()
+    guarded("scan_server_objects", function()
+        local sim = alife and alife() or nil
+        if sim == nil or sim.iterate_objects == nil then
+            return
+        end
+
+        sim:iterate_objects(function(se_obj)
+            register_server_npc(se_obj, false)
+        end)
+    end)
+end
+
+function init()
+    return guarded("init", function()
+        if initialized then
+            return state()
+        end
+
+        state()
+        scan_squads()
+        scan_server_objects()
+        initialized = true
+        log("initialized")
+        return state()
+    end, nil)
+end
+
+function update()
+    return guarded("update", function()
+        if not initialized then
+            init()
+        end
+
+        local now = time_global and time_global() or 0
+        if now < last_scan_at + SCAN_INTERVAL_MS then
+            return
+        end
+
+        last_scan_at = now
+        scan_squads()
+    end)
+end
+
+function save_state(m_data)
+    return guarded("save_state", function()
+        m_data.zf_npc_manifest = state()
+    end)
+end
+
+function load_state(m_data)
+    return guarded("load_state", function()
+        local world = zf_state and zf_state.get and zf_state.get() or {}
+        world.zf_npc_manifest = m_data and m_data.zf_npc_manifest or sim_npc().new_manifest_state()
+        initialized = false
+    end)
+end
+
+function on_squad_add_npc(squad, se_npc)
+    return guarded("on_squad_add_npc", function()
+        local entry = register_server_npc(se_npc, se_npc and se_npc.online == true)
+        if entry and zf_inventory_manifest and zf_inventory_manifest.sync_entry then
+            zf_inventory_manifest.sync_entry(entry)
+        end
+    end)
+end
+
+function on_npc_net_spawn(npc, se_npc)
+    return guarded("on_npc_net_spawn", function()
+        local server_obj = se_npc or (npc and alife_object and alife_object(npc:id())) or nil
+        local entry = register_server_npc(server_obj, true)
+        if entry and zf_inventory_manifest and zf_inventory_manifest.sync_online then
+            zf_inventory_manifest.sync_online(npc, server_obj)
+        end
+    end)
+end
+
+function on_npc_net_destroy(npc)
+    return guarded("on_npc_net_destroy", function()
+        local manifest = state()
+        local id = object_id(npc)
+        sim_npc().mark_offline(manifest, id, tick())
+    end)
+end
+
+function on_squad_npc_death(squad, se_npc)
+    return guarded("on_squad_npc_death", function()
+        local manifest = state()
+        sim_npc().mark_dead(manifest, object_id(se_npc), tick())
+    end)
+end
+
+function on_npc_death(npc)
+    return guarded("on_npc_death", function()
+        local manifest = state()
+        sim_npc().mark_dead(manifest, object_id(npc), tick())
+    end)
+end
+
+function entry_for_engine_id(engine_id)
+    return guarded("entry_for_engine_id", function()
+        return sim_npc().entry_for_engine_id(state(), engine_id)
+    end, nil)
+end
+
+function manifest_state()
+    return guarded("manifest_state", function()
+        return state()
+    end, nil)
+end
+
+function is_controlled(engine_id)
+    return guarded("is_controlled", function()
+        local entry = entry_for_engine_id(engine_id)
+        return entry ~= nil and entry.alive_state ~= "dead"
+    end, false)
+end
+
+function get_debug_lines()
+    return guarded("get_debug_lines", function()
+        local manifest = state()
+        local sim = sim_npc()
+        local alive = sim.count_entries(manifest, "alive")
+        local dead = sim.count_entries(manifest, "dead")
+        local sample = nil
+
+        for _, entry in pairs(manifest.npcs or {}) do
+            if entry.alive_state == "alive" then
+                sample = entry
+                break
+            end
+        end
+
+        local lines = {
+            string.format("npc manifest: alive=%d dead=%d registered=%d", alive, dead, manifest.stats.registered or 0),
+            string.format("npc last: %s error=%s", tostring(last_registered_name), tostring(last_error or "none")),
+        }
+
+        if sample ~= nil then
+            lines[#lines + 1] = string.format(
+                "npc sample: %s %s online=%s items=%d ammo=%d meds=%d",
+                tostring(sample.name),
+                tostring(sample.community),
+                tostring(sample.online),
+                tonumber(sample.inventory_count) or 0,
+                sim.profile_total(sample.ammo_profile),
+                sim.profile_total(sample.medical_profile)
+            )
+        end
+
+        return lines
+    end, {})
+end

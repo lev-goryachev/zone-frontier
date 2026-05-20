@@ -1,0 +1,367 @@
+local last_decision = {
+    npc = "none",
+    reason = "none",
+}
+local last_error = nil
+
+local function log(message)
+    printf("[Zone Frontier] survival_ai %s", tostring(message))
+end
+
+local function guarded(label, fn, fallback)
+    local ok, value = pcall(fn)
+    if ok then
+        return value
+    end
+
+    last_error = tostring(label) .. ": " .. tostring(value)
+    log("ERROR " .. last_error)
+    return fallback
+end
+
+local function sim_npc()
+    return zf_sim_npc or (require and require("zf_sim_npc"))
+end
+
+local function object_id(obj)
+    return guarded("object_id", function()
+        return obj and obj:id() or nil
+    end, nil)
+end
+
+local function object_name(obj)
+    return guarded("object_name", function()
+        return obj and obj:character_name() or (obj and obj:name() or "unknown")
+    end, "unknown")
+end
+
+local function object_rank(obj)
+    return guarded("object_rank", function()
+        if ranks and ranks.get_obj_rank_name then
+            return ranks.get_obj_rank_name(obj)
+        end
+        if obj and obj.rank then
+            return obj:rank()
+        end
+        return "novice"
+    end, "novice")
+end
+
+local function object_weapon_tier(obj)
+    return guarded("object_weapon_tier", function()
+        local active = obj and obj.active_item and obj:active_item() or nil
+        local section = active and active:section() or ""
+
+        if section:find("svd", 1, true) or section:find("gauss", 1, true) or section:find("rpg", 1, true) then
+            return 5
+        end
+
+        if section:find("ak", 1, true) or section:find("lr300", 1, true) or section:find("groza", 1, true) then
+            return 4
+        end
+
+        if section:find("shotgun", 1, true) or section:find("bm16", 1, true) then
+            return 3
+        end
+
+        if section:find("wpn_", 1, true) then
+            return 2
+        end
+
+        return 1
+    end, 1)
+end
+
+local function squad_size_for_entry(entry)
+    return guarded("squad_size_for_entry", function()
+        if entry == nil or entry.squad_id == nil then
+            return 1
+        end
+
+        local squad = alife_object and alife_object(entry.squad_id) or nil
+        if squad and squad.npc_count then
+            return squad:npc_count()
+        end
+
+        return 1
+    end, 1)
+end
+
+local function squad_for_object(obj)
+    return guarded("squad_for_object", function()
+        local id = object_id(obj)
+        if xsquad and xsquad.get_squad_by_member then
+            return xsquad.get_squad_by_member(id)
+        end
+
+        local se_obj = id and alife_object and alife_object(id) or nil
+        local group_id = se_obj and se_obj.group_id or nil
+        if group_id and group_id < 65535 and alife_object then
+            return alife_object(group_id)
+        end
+
+        return nil
+    end, nil)
+end
+
+local function entry_member_input(entry)
+    local sim = sim_npc()
+
+    return {
+        rank = entry and entry.rank or "novice",
+        weapon_tier = entry and entry.weapon_summary and entry.weapon_summary.best_tier or 0,
+        ammo_total = sim.profile_total(entry and entry.ammo_profile or {}),
+        medical_total = sim.profile_total(entry and entry.medical_profile or {}),
+        morale = entry and entry.morale or 50,
+    }
+end
+
+local function server_member_input(se_obj)
+    return guarded("server_member_input", function()
+        local rank = "novice"
+        if ranks and ranks.get_obj_rank_name then
+            rank = ranks.get_obj_rank_name(se_obj)
+        elseif se_obj and se_obj.rank then
+            rank = se_obj:rank()
+        end
+
+        return {
+            rank = rank,
+            weapon_tier = 1,
+            ammo_total = 15,
+            medical_total = 0,
+            morale = 50,
+        }
+    end, {
+        rank = "novice",
+        weapon_tier = 1,
+        ammo_total = 0,
+        medical_total = 0,
+        morale = 50,
+    })
+end
+
+local function group_members_from_manifest(squad_id)
+    return guarded("group_members_from_manifest", function()
+        local manifest = zf_npc_registry and zf_npc_registry.manifest_state and zf_npc_registry.manifest_state() or nil
+        local members = {}
+
+        if manifest == nil or squad_id == nil then
+            return members
+        end
+
+        for _, candidate in pairs(manifest.npcs or {}) do
+            if candidate.alive_state == "alive" and candidate.squad_id == squad_id then
+                members[#members + 1] = entry_member_input(candidate)
+            end
+        end
+
+        return members
+    end, {})
+end
+
+local function group_members_from_squad(squad)
+    return guarded("group_members_from_squad", function()
+        local members = {}
+
+        if squad == nil or squad.squad_members == nil then
+            return members
+        end
+
+        for se_member in squad:squad_members() do
+            local member_id = se_member and se_member.id or nil
+            local entry = zf_npc_registry and zf_npc_registry.entry_for_engine_id and zf_npc_registry.entry_for_engine_id(member_id) or nil
+            if entry ~= nil then
+                members[#members + 1] = entry_member_input(entry)
+            else
+                members[#members + 1] = server_member_input(se_member)
+            end
+        end
+
+        return members
+    end, {})
+end
+
+local function group_summary_from_members(members, fallback_member)
+    local sim = sim_npc()
+    local usable_members = members
+
+    if usable_members == nil or #usable_members == 0 then
+        usable_members = { fallback_member }
+    end
+
+    local group_power, group_size = sim.group_power(usable_members)
+    return group_power, group_size
+end
+
+local function own_group_summary(entry)
+    return guarded("own_group_summary", function()
+        local members = group_members_from_manifest(entry and entry.squad_id)
+        local squad = entry and entry.squad_id and alife_object and alife_object(entry.squad_id) or nil
+
+        if squad ~= nil and squad.npc_count and #members < squad:npc_count() then
+            members = group_members_from_squad(squad)
+        end
+
+        return group_summary_from_members(members, entry_member_input(entry))
+    end, sim_npc().member_power(entry_member_input(entry)), 1)
+end
+
+local function enemy_group_summary(enemy)
+    return guarded("enemy_group_summary", function()
+        local entry = zf_npc_registry and zf_npc_registry.entry_for_engine_id and zf_npc_registry.entry_for_engine_id(object_id(enemy)) or nil
+        local squad = squad_for_object(enemy)
+        local members = {}
+
+        if entry and entry.squad_id then
+            members = group_members_from_manifest(entry.squad_id)
+        end
+
+        if #members == 0 and squad ~= nil then
+            members = group_members_from_squad(squad)
+        end
+
+        return group_summary_from_members(members, entry and entry_member_input(entry) or {
+            rank = object_rank(enemy),
+            weapon_tier = object_weapon_tier(enemy),
+            ammo_total = 30,
+            medical_total = 0,
+            morale = 50,
+        })
+    end, sim_npc().member_power({
+        rank = object_rank(enemy),
+        weapon_tier = object_weapon_tier(enemy),
+        ammo_total = 30,
+        medical_total = 0,
+        morale = 50,
+    }), 1)
+end
+
+local function distance_sqr(a, b)
+    return guarded("distance_sqr", function()
+        if a == nil or b == nil then
+            return 999999
+        end
+        return a:position():distance_to_sqr(b:position())
+    end, 999999)
+end
+
+local function was_hit_by(npc, enemy)
+    return guarded("was_hit_by", function()
+        local id = object_id(npc)
+        local enemy_id = object_id(enemy)
+        local st = id and db and db.storage and db.storage[id] or nil
+        return st ~= nil and st.hitted_by == enemy_id
+    end, false)
+end
+
+local function own_input(entry)
+    local own_group_power, own_group_size = own_group_summary(entry)
+
+    return {
+        rank = entry and entry.rank or "novice",
+        weapon_tier = entry and entry.weapon_summary and entry.weapon_summary.best_tier or 0,
+        ammo_total = sim_npc().profile_total(entry and entry.ammo_profile or {}),
+        medical_total = sim_npc().profile_total(entry and entry.medical_profile or {}),
+        squad_size = squad_size_for_entry(entry),
+        group_power = own_group_power,
+        group_size = own_group_size,
+        morale = entry and entry.morale or 50,
+    }
+end
+
+local function enemy_input(enemy)
+    return guarded("enemy_input", function()
+        local enemy_group_power, enemy_group_size = enemy_group_summary(enemy)
+
+        return {
+            rank = object_rank(enemy),
+            weapon_tier = object_weapon_tier(enemy),
+            ammo_total = 30,
+            medical_total = 0,
+            squad_size = enemy_group_size,
+            group_power = enemy_group_power,
+            group_size = enemy_group_size,
+            is_actor = object_id(enemy) == 0,
+            is_monster = IsMonster and IsMonster(enemy) == true,
+        }
+    end, {
+        rank = "novice",
+        weapon_tier = 1,
+        squad_size = 1,
+        group_power = 1,
+        group_size = 1,
+    })
+end
+
+local function should_skip(npc, enemy, flags)
+    return guarded("should_skip", function()
+        if flags == nil or flags.override == true then
+            return true
+        end
+
+        if npc == nil or enemy == nil then
+            return true
+        end
+
+        if IsStalker and not IsStalker(npc) then
+            return true
+        end
+
+        local entry = zf_npc_registry and zf_npc_registry.entry_for_engine_id(object_id(npc)) or nil
+        if entry == nil or entry.alive_state == "dead" then
+            return true
+        end
+
+        return false
+    end, true)
+end
+
+function on_enemy_eval(npc, enemy, flags)
+    return guarded("on_enemy_eval", function()
+        if should_skip(npc, enemy, flags) then
+            return
+        end
+
+        local entry = zf_npc_registry.entry_for_engine_id(object_id(npc))
+        local decision = sim_npc().evaluate_risk({
+            own = own_input(entry),
+            enemy = enemy_input(enemy),
+            context = {
+                already_hit = was_hit_by(npc, enemy),
+                distance_sqr = distance_sqr(npc, enemy),
+                strategic_reason = false,
+            },
+        })
+
+        if decision.avoid then
+            flags.override = true
+            flags.result = false
+            last_decision.npc = object_name(npc)
+            last_decision.reason = decision.reason
+            last_decision.own_power = decision.own_power
+            last_decision.enemy_power = decision.enemy_power
+            last_decision.own_group_power = decision.own_group_power
+            last_decision.enemy_group_power = decision.enemy_group_power
+            last_decision.own_group_size = decision.own_group_size
+            last_decision.enemy_group_size = decision.enemy_group_size
+        end
+    end)
+end
+
+function get_debug_lines()
+    return guarded("get_debug_lines", function()
+        return {
+            string.format(
+                "survival gate: last=%s reason=%s own=%s/%s enemy=%s/%s error=%s",
+                tostring(last_decision.npc),
+                tostring(last_decision.reason),
+                tostring(last_decision.own_group_size or "-"),
+                tostring(last_decision.own_group_power or last_decision.own_power or "-"),
+                tostring(last_decision.enemy_group_size or "-"),
+                tostring(last_decision.enemy_group_power or last_decision.enemy_power or "-"),
+                tostring(last_error or "none")
+            ),
+        }
+    end, {})
+end

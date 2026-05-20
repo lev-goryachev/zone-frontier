@@ -1,6 +1,6 @@
 local UPDATE_INTERVAL_MS = 250
 local WIDTH = 360
-local HEIGHT = 230
+local HEIGHT = 420
 local POS_X = 18
 local POS_Y = 118
 
@@ -68,7 +68,7 @@ local function build_text()
     local cp_storage = cp.storage or {}
     local gh_storage = gh.storage or {}
 
-    return string.format(
+    local text = string.format(
         "Zone Frontier\nactor: %s\nlevel: %s\nschema: %s\nstrategic_tick: %d\nterritories: %d factions: %d\ncaravans: %d active: %d\nevents: %d\nrv supply/security: %.2f/%.2f\ncp food/ammo: %d/%d\ngh scrap: %d\nlast: %s",
         actor_status(),
         current_level(),
@@ -86,6 +86,32 @@ local function build_text()
         tonumber(gh_storage.scrap_metal) or 0,
         tostring(state.last_event)
     )
+
+    if zf_supply and zf_supply.get_debug_lines then
+        for _, line in ipairs(zf_supply.get_debug_lines()) do
+            text = text .. "\n" .. tostring(line)
+        end
+    end
+
+    if zf_npc_registry and zf_npc_registry.get_debug_lines then
+        for _, line in ipairs(zf_npc_registry.get_debug_lines()) do
+            text = text .. "\n" .. tostring(line)
+        end
+    end
+
+    if zf_inventory_manifest and zf_inventory_manifest.get_debug_lines then
+        for _, line in ipairs(zf_inventory_manifest.get_debug_lines()) do
+            text = text .. "\n" .. tostring(line)
+        end
+    end
+
+    if zf_survival_ai and zf_survival_ai.get_debug_lines then
+        for _, line in ipairs(zf_survival_ai.get_debug_lines()) do
+            text = text .. "\n" .. tostring(line)
+        end
+    end
+
+    return text
 end
 
 class "ZoneFrontierDebugHUD" (CUIScriptWnd)
@@ -102,13 +128,11 @@ function ZoneFrontierDebugHUD:__init() super()
     self.shadow:SetWndPos(vector2():set(1, 1))
     self.shadow:SetWndSize(vector2():set(WIDTH, HEIGHT))
     self.shadow:TextControl():SetTextColor(GetARGB(210, 0, 0, 0))
-    self.shadow:TextControl():SetTextComplexMode(true)
 
     self.text = xml:InitStatic("line", self)
     self.text:SetWndPos(vector2():set(0, 0))
     self.text:SetWndSize(vector2():set(WIDTH, HEIGHT))
     self.text:TextControl():SetTextColor(GetARGB(230, 180, 220, 180))
-    self.text:TextControl():SetTextComplexMode(true)
 
     self:Refresh()
 end

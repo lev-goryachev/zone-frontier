@@ -7,72 +7,203 @@ local function log(message)
     printf("%s %s", LOG_PREFIX, message)
 end
 
+local function guarded(label, fn)
+    local ok, err = pcall(fn)
+    if not ok then
+        log("ERROR " .. tostring(label) .. ": " .. tostring(err))
+    end
+end
+
 local function actor_on_first_update()
-    if first_update_done then
-        return
-    end
+    guarded("actor_on_first_update", function()
+        if first_update_done then
+            return
+        end
 
-    first_update_done = true
-    log("actor_on_first_update reached")
+        first_update_done = true
+        log("actor_on_first_update reached")
 
-    if zf_core then
-        zf_core.init()
-    end
+        if zf_core then
+            zf_core.init()
+        end
 
-    if zf_debug_hud then
-        zf_debug_hud.on_actor_ready()
-        zf_debug_hud.update()
-    end
+        if zf_supply then
+            zf_supply.init()
+        end
 
-    if UnregisterScriptCallback then
-        UnregisterScriptCallback("actor_on_first_update", actor_on_first_update)
-    end
+        if zf_npc_registry then
+            zf_npc_registry.init()
+        end
+
+        if zf_inventory_manifest then
+            zf_inventory_manifest.sync_all_known()
+        end
+
+        if zf_debug_hud then
+            zf_debug_hud.on_actor_ready()
+            zf_debug_hud.update()
+        end
+
+        if UnregisterScriptCallback then
+            UnregisterScriptCallback("actor_on_first_update", actor_on_first_update)
+        end
+    end)
 end
 
 local function actor_on_update()
-    if zf_core then
-        zf_core.update()
-    end
+    guarded("actor_on_update", function()
+        if zf_core then
+            zf_core.update()
+        end
 
-    if zf_debug_hud then
-        zf_debug_hud.update()
-    end
+        if zf_supply then
+            zf_supply.update()
+        end
+
+        if zf_npc_registry then
+            zf_npc_registry.update()
+        end
+
+        if zf_debug_hud then
+            zf_debug_hud.update()
+        end
+    end)
 end
 
 local function actor_on_net_destroy()
-    if zf_debug_hud then
-        zf_debug_hud.hide()
-    end
+    guarded("actor_on_net_destroy", function()
+        if zf_debug_hud then
+            zf_debug_hud.hide()
+        end
+    end)
 end
 
 local function on_option_change()
-    if zf_debug_hud then
-        zf_debug_hud.update(true)
-    end
+    guarded("on_option_change", function()
+        if zf_debug_hud then
+            zf_debug_hud.update(true)
+        end
+    end)
 end
 
 local function on_gui_show()
-    if zf_debug_hud then
-        zf_debug_hud.set_gui_open(true)
-    end
+    guarded("on_gui_show", function()
+        if zf_debug_hud then
+            zf_debug_hud.set_gui_open(true)
+        end
+    end)
 end
 
 local function on_gui_hide()
-    if zf_debug_hud then
-        zf_debug_hud.set_gui_open(false)
-    end
+    guarded("on_gui_hide", function()
+        if zf_debug_hud then
+            zf_debug_hud.set_gui_open(false)
+        end
+    end)
+end
+
+local function actor_on_item_put_in_box(box, item)
+    guarded("actor_on_item_put_in_box", function()
+        if zf_supply then
+            zf_supply.on_item_put_in_box(box, item)
+        end
+    end)
+end
+
+local function actor_on_item_take_from_box(box, item)
+    guarded("actor_on_item_take_from_box", function()
+        if zf_supply then
+            zf_supply.on_item_take_from_box(box, item)
+        end
+    end)
+end
+
+local function save_state(m_data)
+    guarded("save_state", function()
+        if zf_npc_registry then
+            zf_npc_registry.save_state(m_data)
+        end
+    end)
+end
+
+local function load_state(m_data)
+    guarded("load_state", function()
+        if zf_npc_registry then
+            zf_npc_registry.load_state(m_data)
+        end
+    end)
+end
+
+local function squad_on_add_npc(squad, se_npc, spawn_section, spawn_position, lv_id, gv_id)
+    guarded("squad_on_add_npc", function()
+        if zf_npc_registry then
+            zf_npc_registry.on_squad_add_npc(squad, se_npc, spawn_section, spawn_position, lv_id, gv_id)
+        end
+    end)
+end
+
+local function squad_on_npc_death(squad, se_npc, se_killer)
+    guarded("squad_on_npc_death", function()
+        if zf_npc_registry then
+            zf_npc_registry.on_squad_npc_death(squad, se_npc, se_killer)
+        end
+    end)
+end
+
+local function npc_on_net_spawn(npc, se_npc)
+    guarded("npc_on_net_spawn", function()
+        if zf_npc_registry then
+            zf_npc_registry.on_npc_net_spawn(npc, se_npc)
+        end
+    end)
+end
+
+local function npc_on_net_destroy(npc)
+    guarded("npc_on_net_destroy", function()
+        if zf_npc_registry then
+            zf_npc_registry.on_npc_net_destroy(npc)
+        end
+    end)
+end
+
+local function npc_on_death_callback(npc, killer)
+    guarded("npc_on_death_callback", function()
+        if zf_npc_registry then
+            zf_npc_registry.on_npc_death(npc, killer)
+        end
+    end)
+end
+
+local function on_enemy_eval(npc, enemy, flags)
+    guarded("on_enemy_eval", function()
+        if zf_survival_ai then
+            zf_survival_ai.on_enemy_eval(npc, enemy, flags)
+        end
+    end)
 end
 
 function on_game_start()
-    log("zf_main loaded")
+    guarded("on_game_start", function()
+        log("zf_main loaded")
 
-    if RegisterScriptCallback then
-        RegisterScriptCallback("actor_on_first_update", actor_on_first_update)
-        RegisterScriptCallback("actor_on_update", actor_on_update)
-        RegisterScriptCallback("actor_on_net_destroy", actor_on_net_destroy)
-        RegisterScriptCallback("actor_on_before_death", actor_on_net_destroy)
-        RegisterScriptCallback("on_option_change", on_option_change)
-        RegisterScriptCallback("GUI_on_show", on_gui_show)
-        RegisterScriptCallback("GUI_on_hide", on_gui_hide)
-    end
+        if RegisterScriptCallback then
+            RegisterScriptCallback("actor_on_first_update", actor_on_first_update)
+            RegisterScriptCallback("actor_on_update", actor_on_update)
+            RegisterScriptCallback("actor_on_net_destroy", actor_on_net_destroy)
+            RegisterScriptCallback("actor_on_before_death", actor_on_net_destroy)
+            RegisterScriptCallback("on_option_change", on_option_change)
+            RegisterScriptCallback("GUI_on_show", on_gui_show)
+            RegisterScriptCallback("GUI_on_hide", on_gui_hide)
+            RegisterScriptCallback("actor_on_item_put_in_box", actor_on_item_put_in_box)
+            RegisterScriptCallback("actor_on_item_take_from_box", actor_on_item_take_from_box)
+            RegisterScriptCallback("save_state", save_state)
+            RegisterScriptCallback("load_state", load_state)
+            RegisterScriptCallback("squad_on_add_npc", squad_on_add_npc)
+            RegisterScriptCallback("squad_on_npc_death", squad_on_npc_death)
+            RegisterScriptCallback("npc_on_net_spawn", npc_on_net_spawn)
+            RegisterScriptCallback("npc_on_net_destroy", npc_on_net_destroy)
+            RegisterScriptCallback("npc_on_death_callback", npc_on_death_callback)
+            RegisterScriptCallback("on_enemy_eval", on_enemy_eval)
+        end
+    end)
 end

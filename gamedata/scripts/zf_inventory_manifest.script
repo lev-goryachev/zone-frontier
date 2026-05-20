@@ -1,0 +1,277 @@
+local last_error = nil
+local last_sync = {
+    name = "none",
+    count = 0,
+}
+
+local function log(message)
+    printf("[Zone Frontier] inventory_manifest %s", tostring(message))
+end
+
+local function guarded(label, fn, fallback)
+    local ok, value = pcall(fn)
+    if ok then
+        return value
+    end
+
+    last_error = tostring(label) .. ": " .. tostring(value)
+    log("ERROR " .. last_error)
+    return fallback
+end
+
+local function sim_npc()
+    return zf_sim_npc or (require and require("zf_sim_npc"))
+end
+
+local function object_id(obj)
+    return guarded("object_id", function()
+        if obj == nil then
+            return nil
+        end
+        if type(obj.id) == "function" then
+            return obj:id()
+        end
+        return obj.id
+    end, nil)
+end
+
+local function object_section(obj)
+    return guarded("object_section", function()
+        if obj and obj.section_name then
+            return obj:section_name()
+        end
+        if obj and obj.section then
+            return obj:section()
+        end
+        return "unknown"
+    end, "unknown")
+end
+
+local function online_ammo_count(item)
+    return guarded("online_ammo_count", function()
+        if item and item.ammo_get_count then
+            return item:ammo_get_count()
+        end
+        return nil
+    end, nil)
+end
+
+local function online_condition(item)
+    return guarded("online_condition", function()
+        if item and item.condition then
+            return item:condition()
+        end
+        return nil
+    end, nil)
+end
+
+local function is_weapon(obj)
+    return guarded("is_weapon", function()
+        return IsWeapon and IsWeapon(obj) == true
+    end, false)
+end
+
+local function is_ammo(obj)
+    return guarded("is_ammo", function()
+        return IsAmmo and IsAmmo(obj) == true
+    end, false)
+end
+
+local function is_medical_section(section)
+    return guarded("is_medical_section", function()
+        if medkits and medkits[section] then
+            return true
+        end
+        if healhelp and healhelp[section] then
+            return true
+        end
+        return false
+    end, false)
+end
+
+local function item_kind(obj, section)
+    if is_weapon(obj) then
+        return "weapon"
+    end
+
+    if is_ammo(obj) or (IsItem and IsItem("ammo", section)) then
+        return "ammo"
+    end
+
+    if is_medical_section(section) then
+        return "medical"
+    end
+
+    return "item"
+end
+
+local function packet_data_for_server_item(se_item, kind)
+    return guarded("packet_data_for_server_item", function()
+        if utils_stpk == nil then
+            return nil
+        end
+
+        if kind == "weapon" and utils_stpk.get_weapon_data then
+            return utils_stpk.get_weapon_data(se_item)
+        end
+
+        if kind == "ammo" and utils_stpk.get_ammo_data then
+            return utils_stpk.get_ammo_data(se_item)
+        end
+
+        if utils_stpk.get_item_data then
+            return utils_stpk.get_item_data(se_item)
+        end
+
+        return nil
+    end, nil)
+end
+
+local function server_item_entry(se_item, source)
+    return guarded("server_item_entry", function()
+        local section = object_section(se_item)
+        local kind = item_kind(se_item, section)
+        local data = packet_data_for_server_item(se_item, kind) or {}
+
+        local entry = {
+            item_id = object_id(se_item),
+            section = section,
+            kind = kind,
+            source = source or "offline",
+            condition = data.condition,
+            upgrades = data.upgrades,
+            custom_data = data.custom_data,
+        }
+
+        if kind == "ammo" then
+            entry.ammo_left = data.ammo_left or online_ammo_count(se_item) or 1
+        elseif kind == "weapon" then
+            entry.weapon_state = {
+                ammo_current = data.ammo_current,
+                ammo_elapsed = data.ammo_elapsed,
+                ammo_type = data.ammo_type,
+                addon_flags = data.addon_flags,
+                weapon_state = data.weapon_state,
+            }
+        elseif kind == "medical" then
+            entry.count = 1
+        end
+
+        return entry
+    end, nil)
+end
+
+local function online_item_entry(item)
+    return guarded("online_item_entry", function()
+        local section = object_section(item)
+        local kind = item_kind(item, section)
+        local entry = {
+            item_id = object_id(item),
+            section = section,
+            kind = kind,
+            source = "online",
+            condition = online_condition(item),
+        }
+
+        if kind == "ammo" then
+            entry.ammo_left = online_ammo_count(item) or 1
+        elseif kind == "weapon" then
+            entry.weapon_state = {
+                ammo_elapsed = item.get_ammo_in_magazine and item:get_ammo_in_magazine() or nil,
+            }
+        elseif kind == "medical" then
+            entry.count = 1
+        end
+
+        return entry
+    end, nil)
+end
+
+local function merge_entry_inventory(entry, items)
+    return guarded("merge_entry_inventory", function()
+        sim_npc().merge_inventory(entry, items, entry and entry.last_seen_tick or 0)
+        last_sync.name = entry and entry.name or "unknown"
+        last_sync.count = #items
+        return entry
+    end, entry)
+end
+
+local function collect_offline_items(owner_id)
+    return guarded("collect_offline_items", function()
+        local sim = alife and alife() or nil
+        local items = {}
+
+        if sim == nil or sim.iterate_objects == nil or owner_id == nil then
+            return items
+        end
+
+        sim:iterate_objects(function(se_item)
+            if se_item and se_item.parent_id == owner_id then
+                local item = server_item_entry(se_item, "offline")
+                if item ~= nil then
+                    items[#items + 1] = item
+                end
+            end
+        end)
+
+        return items
+    end, {})
+end
+
+function sync_entry(entry)
+    return guarded("sync_entry", function()
+        if entry == nil or entry.engine_id == nil then
+            return nil
+        end
+
+        return merge_entry_inventory(entry, collect_offline_items(entry.engine_id))
+    end, nil)
+end
+
+function sync_online(npc, se_npc)
+    return guarded("sync_online", function()
+        local engine_id = object_id(se_npc) or object_id(npc)
+        local entry = zf_npc_registry and zf_npc_registry.entry_for_engine_id(engine_id) or nil
+        local items = {}
+
+        if npc ~= nil and npc.iterate_inventory ~= nil then
+            npc:iterate_inventory(function(_, item)
+                local manifest_item = online_item_entry(item)
+                if manifest_item ~= nil then
+                    items[#items + 1] = manifest_item
+                end
+            end, nil)
+        else
+            items = collect_offline_items(engine_id)
+        end
+
+        if entry ~= nil then
+            return merge_entry_inventory(entry, items)
+        end
+
+        return nil
+    end, nil)
+end
+
+function sync_all_known()
+    return guarded("sync_all_known", function()
+        local manifest = zf_npc_registry and zf_npc_registry.manifest_state() or nil
+        if manifest == nil then
+            return
+        end
+
+        for _, entry in pairs(manifest.npcs or {}) do
+            if entry.alive_state == "alive" then
+                sync_entry(entry)
+            end
+        end
+    end)
+end
+
+function get_debug_lines()
+    return guarded("get_debug_lines", function()
+        return {
+            string.format("inventory sync: last=%s items=%d error=%s", tostring(last_sync.name), tonumber(last_sync.count) or 0, tostring(last_error or "none")),
+        }
+    end, {})
+end
