@@ -6,10 +6,13 @@ The project aims to add territory control, logistics, caravans, resource pressur
 
 Current status: documentation-first planning and early project setup.
 
+## Project Rules
+
+Persistent development rules are defined in `AGENTS.md`.
+
 ## Documents
 
 - `docs/zone_frontier_vision_document_v_0_1.md`
 - `docs/zone_frontier_prd_mvp_v_0_1.md`
 - `docs/zone_frontier_technical_architecture_v_0_1.md`
 - `docs/zone_frontier_data_model_state_schema_v0_1.md`
-
