@@ -1,0 +1,136 @@
+local UPDATE_INTERVAL_MS = 250
+local WIDTH = 280
+local HEIGHT = 96
+local POS_X = 18
+local POS_Y = 118
+
+local hud = nil
+local actor_ready = false
+local gui_open = false
+local last_update = 0
+local update_count = 0
+
+local function is_enabled()
+    return zf_mcm and zf_mcm.get_config("debug_enabled") == true
+end
+
+local function safe_value(fn, fallback)
+    local ok, value = pcall(fn)
+    if ok and value ~= nil then
+        return value
+    end
+
+    return fallback
+end
+
+local function current_level()
+    return safe_value(function()
+        return level.name()
+    end, "unknown")
+end
+
+local function actor_status()
+    return db and db.actor and "ready" or "missing"
+end
+
+local function build_text()
+    update_count = update_count + 1
+
+    return string.format(
+        "Zone Frontier\nloaded: yes\nactor: %s\nlevel: %s\ntick: %d\nstate: bootstrap",
+        actor_status(),
+        current_level(),
+        update_count
+    )
+end
+
+class "ZoneFrontierDebugHUD" (CUIScriptWnd)
+
+function ZoneFrontierDebugHUD:__init() super()
+    self:SetAutoDelete(true)
+    self:SetWndPos(vector2():set(POS_X, POS_Y))
+    self:SetWndSize(vector2():set(WIDTH, HEIGHT))
+
+    local xml = CScriptXmlInit()
+    xml:ParseFile("ui_zf_debug.xml")
+
+    self.shadow = xml:InitStatic("line", self)
+    self.shadow:SetWndPos(vector2():set(1, 1))
+    self.shadow:SetWndSize(vector2():set(WIDTH, HEIGHT))
+    self.shadow:TextControl():SetTextColor(GetARGB(210, 0, 0, 0))
+
+    self.text = xml:InitStatic("line", self)
+    self.text:SetWndPos(vector2():set(0, 0))
+    self.text:SetWndSize(vector2():set(WIDTH, HEIGHT))
+    self.text:TextControl():SetTextColor(GetARGB(230, 180, 220, 180))
+
+    self:Refresh()
+end
+
+function ZoneFrontierDebugHUD:__finalize()
+end
+
+function ZoneFrontierDebugHUD:Refresh()
+    local text = build_text()
+    self.shadow:TextControl():SetText(text)
+    self.text:TextControl():SetText(text)
+end
+
+function show()
+    if hud ~= nil then
+        return
+    end
+
+    hud = ZoneFrontierDebugHUD()
+    get_hud():AddDialogToRender(hud)
+end
+
+function hide()
+    if hud == nil then
+        return
+    end
+
+    get_hud():RemoveDialogToRender(hud)
+    hud = nil
+end
+
+function on_actor_ready()
+    actor_ready = true
+end
+
+function set_gui_open(value)
+    gui_open = value == true
+
+    if hud ~= nil then
+        hud:Show(not gui_open)
+    end
+end
+
+function update(force)
+    if not actor_ready then
+        return
+    end
+
+    if not is_enabled() then
+        hide()
+        return
+    end
+
+    show()
+
+    if hud ~= nil then
+        hud:Show(not gui_open)
+    end
+
+    local now = time_global()
+    if (not force) and now < last_update + UPDATE_INTERVAL_MS then
+        return
+    end
+
+    last_update = now
+
+    if hud ~= nil then
+        hud:Refresh()
+    end
+end
+

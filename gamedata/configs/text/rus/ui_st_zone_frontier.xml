@@ -1,0 +1,15 @@
+<string_table>
+    <string id="ui_mcm_menu_zone_frontier">
+        <text>Zone Frontier</text>
+    </string>
+    <string id="ui_mcm_zone_frontier_title">
+        <text>Zone Frontier</text>
+    </string>
+    <string id="ui_mcm_zone_frontier_debug_enabled">
+        <text>Debug mode</text>
+    </string>
+    <string id="ui_mcm_zone_frontier_debug_enabled_desc">
+        <text>Shows the Zone Frontier debug overlay in-game.</text>
+    </string>
+</string_table>
+
