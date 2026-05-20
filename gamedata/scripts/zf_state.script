@@ -1,0 +1,53 @@
+local SCHEMA_VERSION = "0.1.0"
+
+local world_state = nil
+
+local function new_world_state()
+    return {
+        schema_version = SCHEMA_VERSION,
+        initialized = true,
+        strategic_tick = 0,
+        territories = {},
+        factions = {},
+        caravans = {},
+        events = {},
+    }
+end
+
+function init()
+    if world_state == nil then
+        world_state = new_world_state()
+    end
+
+    return world_state
+end
+
+function get()
+    return init()
+end
+
+function reset_debug_state()
+    world_state = new_world_state()
+    return world_state
+end
+
+function increment_tick()
+    local state = init()
+    state.strategic_tick = state.strategic_tick + 1
+    return state.strategic_tick
+end
+
+function count_map_items(value)
+    local count = 0
+
+    if type(value) ~= "table" then
+        return count
+    end
+
+    for _, _ in pairs(value) do
+        count = count + 1
+    end
+
+    return count
+end
+

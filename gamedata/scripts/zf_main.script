@@ -15,6 +15,10 @@ local function actor_on_first_update()
     first_update_done = true
     log("actor_on_first_update reached")
 
+    if zf_core then
+        zf_core.init()
+    end
+
     if zf_debug_hud then
         zf_debug_hud.on_actor_ready()
         zf_debug_hud.update()
@@ -26,6 +30,10 @@ local function actor_on_first_update()
 end
 
 local function actor_on_update()
+    if zf_core then
+        zf_core.update()
+    end
+
     if zf_debug_hud then
         zf_debug_hud.update()
     end

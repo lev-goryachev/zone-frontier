@@ -1,0 +1,50 @@
+local STRATEGIC_TICK_MS = 10000
+
+local initialized = false
+local next_tick_at = 0
+
+local function log(message)
+    printf("[Zone Frontier] %s", message)
+end
+
+function init()
+    if initialized then
+        return
+    end
+
+    if zf_state then
+        zf_state.init()
+    end
+
+    next_tick_at = time_global() + STRATEGIC_TICK_MS
+    initialized = true
+    log("core initialized")
+end
+
+function update()
+    if not initialized then
+        init()
+    end
+
+    local now = time_global()
+    if now < next_tick_at then
+        return
+    end
+
+    next_tick_at = now + STRATEGIC_TICK_MS
+
+    if zf_state then
+        local tick = zf_state.increment_tick()
+        log("strategic_tick=" .. tostring(tick))
+    end
+end
+
+function reset_debug_state()
+    if zf_state then
+        zf_state.reset_debug_state()
+    end
+
+    next_tick_at = time_global() + STRATEGIC_TICK_MS
+    log("debug state reset")
+end
+

@@ -1,6 +1,6 @@
 local UPDATE_INTERVAL_MS = 250
 local WIDTH = 280
-local HEIGHT = 96
+local HEIGHT = 160
 local POS_X = 18
 local POS_Y = 118
 
@@ -33,14 +33,45 @@ local function actor_status()
     return db and db.actor and "ready" or "missing"
 end
 
+local function count(value)
+    if zf_state and zf_state.count_map_items then
+        return zf_state.count_map_items(value)
+    end
+
+    return 0
+end
+
+local function world_state()
+    if zf_state and zf_state.get then
+        return zf_state.get()
+    end
+
+    return nil
+end
+
 local function build_text()
     update_count = update_count + 1
+    local state = world_state()
+
+    if state == nil then
+        return string.format(
+            "Zone Frontier\nloaded: yes\nactor: %s\nlevel: %s\nhud_tick: %d\nstate: missing",
+            actor_status(),
+            current_level(),
+            update_count
+        )
+    end
 
     return string.format(
-        "Zone Frontier\nloaded: yes\nactor: %s\nlevel: %s\ntick: %d\nstate: bootstrap",
+        "Zone Frontier\nloaded: yes\nactor: %s\nlevel: %s\nschema: %s\nstrategic_tick: %d\nterritories: %d\nfactions: %d\ncaravans: %d\nevents: %d",
         actor_status(),
         current_level(),
-        update_count
+        tostring(state.schema_version),
+        tonumber(state.strategic_tick) or 0,
+        count(state.territories),
+        count(state.factions),
+        count(state.caravans),
+        count(state.events)
     )
 end
 
@@ -133,4 +164,3 @@ function update(force)
         hud:Refresh()
     end
 end
-
