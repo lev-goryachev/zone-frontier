@@ -102,11 +102,13 @@ function ZoneFrontierDebugHUD:__init() super()
     self.shadow:SetWndPos(vector2():set(1, 1))
     self.shadow:SetWndSize(vector2():set(WIDTH, HEIGHT))
     self.shadow:TextControl():SetTextColor(GetARGB(210, 0, 0, 0))
+    self.shadow:TextControl():SetTextComplexMode(true)
 
     self.text = xml:InitStatic("line", self)
     self.text:SetWndPos(vector2():set(0, 0))
     self.text:SetWndSize(vector2():set(WIDTH, HEIGHT))
     self.text:TextControl():SetTextColor(GetARGB(230, 180, 220, 180))
+    self.text:TextControl():SetTextComplexMode(true)
 
     self:Refresh()
 end
@@ -115,7 +117,7 @@ function ZoneFrontierDebugHUD:__finalize()
 end
 
 function ZoneFrontierDebugHUD:Refresh()
-    local text = build_text()
+    local text = build_text():gsub("\n", "\\n")
     self.shadow:TextControl():SetText(text)
     self.text:TextControl():SetText(text)
 end
