@@ -11,6 +11,11 @@ local function new_world_state()
         factions = {},
         caravans = {},
         events = {},
+        supply_routes = {},
+        resource_definitions = {},
+        faction_definitions = {},
+        territory_definitions = {},
+        last_event = "none",
     }
 end
 
@@ -44,10 +49,22 @@ function count_map_items(value)
         return count
     end
 
-    for _, _ in pairs(value) do
+    for _ in pairs(value) do
         count = count + 1
     end
 
     return count
 end
 
+function active_caravan_count(state)
+    local count = 0
+    local world = state or get()
+
+    for _, caravan in pairs(world.caravans or {}) do
+        if caravan.state == "moving" then
+            count = count + 1
+        end
+    end
+
+    return count
+end

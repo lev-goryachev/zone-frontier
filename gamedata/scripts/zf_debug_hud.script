@@ -1,6 +1,6 @@
 local UPDATE_INTERVAL_MS = 250
-local WIDTH = 280
-local HEIGHT = 160
+local WIDTH = 360
+local HEIGHT = 230
 local POS_X = 18
 local POS_Y = 118
 
@@ -62,8 +62,14 @@ local function build_text()
         )
     end
 
+    local rv = state.territories.rookie_village or {}
+    local cp = state.territories.cordon_checkpoint or {}
+    local gh = state.territories.garbage_hangar or {}
+    local cp_storage = cp.storage or {}
+    local gh_storage = gh.storage or {}
+
     return string.format(
-        "Zone Frontier\nloaded: yes\nactor: %s\nlevel: %s\nschema: %s\nstrategic_tick: %d\nterritories: %d\nfactions: %d\ncaravans: %d\nevents: %d",
+        "Zone Frontier\nactor: %s\nlevel: %s\nschema: %s\nstrategic_tick: %d\nterritories: %d factions: %d\ncaravans: %d active: %d\nevents: %d\nrv supply/security: %.2f/%.2f\ncp food/ammo: %d/%d\ngh scrap: %d\nlast: %s",
         actor_status(),
         current_level(),
         tostring(state.schema_version),
@@ -71,7 +77,14 @@ local function build_text()
         count(state.territories),
         count(state.factions),
         count(state.caravans),
-        count(state.events)
+        zf_state and zf_state.active_caravan_count(state) or 0,
+        count(state.events),
+        tonumber(rv.supply) or 0,
+        tonumber(rv.security) or 0,
+        tonumber(cp_storage.food) or 0,
+        tonumber(cp_storage.ammo_basic) or 0,
+        tonumber(gh_storage.scrap_metal) or 0,
+        tostring(state.last_event)
     )
 end
 

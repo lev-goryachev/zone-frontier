@@ -1,0 +1,121 @@
+local definitions = {
+    rookie_village = {
+        id = "rookie_village",
+        display_name = "Rookie Village",
+        type = "outpost",
+        owner = "loners",
+        supply = 0.85,
+        security = 0.45,
+        storage = {
+            food = 80,
+            water = 70,
+            ammo_basic = 90,
+            scrap_metal = 10,
+        },
+        consumption = {
+            food = 3,
+            water = 3,
+            ammo_basic = 1,
+        },
+        production = {},
+    },
+    cordon_checkpoint = {
+        id = "cordon_checkpoint",
+        display_name = "Cordon Checkpoint",
+        type = "outpost",
+        owner = "loners",
+        supply = 0.65,
+        security = 0.35,
+        storage = {
+            food = 20,
+            water = 20,
+            ammo_basic = 35,
+            scrap_metal = 0,
+        },
+        consumption = {
+            food = 2,
+            water = 2,
+            ammo_basic = 2,
+        },
+        production = {},
+    },
+    garbage_hangar = {
+        id = "garbage_hangar",
+        display_name = "Garbage Hangar",
+        type = "resource_point",
+        owner = "bandits",
+        supply = 0.55,
+        security = 0.55,
+        storage = {
+            food = 28,
+            water = 22,
+            ammo_basic = 50,
+            scrap_metal = 120,
+        },
+        consumption = {
+            food = 2,
+            water = 2,
+            ammo_basic = 1,
+        },
+        production = {
+            scrap_metal = 8,
+        },
+    },
+}
+
+local function copy_map(value)
+    local result = {}
+
+    for key, item in pairs(value or {}) do
+        result[key] = item
+    end
+
+    return result
+end
+
+local function copy_territory(definition)
+    return {
+        id = definition.id,
+        display_name = definition.display_name,
+        type = definition.type,
+        owner = definition.owner,
+        supply = definition.supply,
+        security = definition.security,
+        storage = copy_map(definition.storage),
+        consumption = copy_map(definition.consumption),
+        production = copy_map(definition.production),
+    }
+end
+
+local function add_faction_territory(state, faction_id, territory_id)
+    local faction = state.factions[faction_id]
+
+    if faction == nil then
+        return
+    end
+
+    for _, existing in ipairs(faction.territories) do
+        if existing == territory_id then
+            return
+        end
+    end
+
+    table.insert(faction.territories, territory_id)
+end
+
+function get_definitions()
+    return definitions
+end
+
+function init_state(state)
+    state.territory_definitions = definitions
+
+    for id, definition in pairs(definitions) do
+        if state.territories[id] == nil then
+            state.territories[id] = copy_territory(definition)
+        end
+
+        add_faction_territory(state, definition.owner, id)
+    end
+end
+
